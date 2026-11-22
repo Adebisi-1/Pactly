@@ -22,6 +22,7 @@ import type {
   ProviderProfile,
   ProvidersResponse,
   QuoteResponse,
+  ReleaseDepositResponse,
   ResolveDisputeResponse,
   SubmitResponse,
   SuggestResponse,
@@ -30,12 +31,14 @@ import type {
   OpenLocalDepositResponse,
   AdminApplicationsResponse,
   AdminProviderApplication,
+  DepositPreviewInput,
+  DepositPreviewResponse,
   OwnProviderApplicationResponse,
   ProviderApplicationInput,
   ProviderApplicationOutcome,
   RateResponse,
-  ClosedDatesResponse,
-  ProviderProfileEditInput,
+  ShopReportSubmitResponse,
+  ShopReportsListResponse,
 } from "./types";
 import { FALLBACK_TRY_PER_USDC } from "../lib/money";
 import type { Session } from "../wallet";
@@ -157,6 +160,7 @@ export interface ProviderRulesInput {
   priceAmount: string;
   depositRateBps: number;
   cancellationWindowHours: number;
+  bufferMinutes: number;
 }
 
 export function useUpdateProviderRules(session: Session | undefined) {
@@ -385,8 +389,8 @@ export function approveAppointment(bookingId: string, session: Session): Promise
   return apiPost<ActionResponse>(`/bookings/${bookingId}/approve`, {}, session.token);
 }
 
-export function releaseDeposit(bookingId: string, session: Session): Promise<ActionResponse> {
-  return apiPost<ActionResponse>(`/bookings/${bookingId}/release`, {}, session.token);
+export function releaseDeposit(bookingId: string, session: Session): Promise<ReleaseDepositResponse> {
+  return apiPost<ReleaseDepositResponse>(`/bookings/${bookingId}/release`, {}, session.token);
 }
 
 /** Builds the unsigned start-dispute XDR and, in the same response, the
@@ -520,6 +524,22 @@ export function useSubmitProviderApplication(session: Session | undefined) {
   });
 }
 
+/** Live deposit for the apply form -- the number on screen is whatever
+ * this returns. Disabled until both price and rate look parseable; a
+ * 400 from the server is a failed preview (caller blocks submit). */
+export function useApplicationDepositPreview(
+  session: Session | undefined,
+  input: DepositPreviewInput | undefined,
+) {
+  return useQuery({
+    queryKey: ["me", "provider", "application", "deposit-preview", session?.walletAddress, input?.priceAmount, input?.depositRateBps],
+    queryFn: () =>
+      apiPost<DepositPreviewResponse>("/me/provider/application/deposit-preview", input, session?.token),
+    enabled: Boolean(session && input?.priceAmount && Number.isInteger(input.depositRateBps)),
+    retry: false,
+  });
+}
+
 export function useAdminApplications(session: Session | undefined) {
   return useQuery({
     queryKey: ["admin", "applications", session?.walletAddress],
@@ -573,4 +593,16 @@ export function useTryRate(): TryRate {
     },
   });
   return query.data ?? FALLBACK_TRY_RATE;
+}
+
+// ---------------------------------------------------------------------------
+// Shop reports: clients report a shop to admins.
+// ---------------------------------------------------------------------------
+
+export function submitShopReport(providerId: string, reason: string, session: Session): Promise<ShopReportSubmitResponse> {
+  return apiPost<ShopReportSubmitResponse>(`/providers/${providerId}/report`, { reason }, session.token);
+}
+
+export function getShopReportsForAdmin(session: Session): Promise<ShopReportsListResponse> {
+  return apiGet<ShopReportsListResponse>("/admin/shop-reports", session.token);
 }
