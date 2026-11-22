@@ -597,3 +597,19 @@ export const escrowDisputeOpenings = sqliteTable("escrow_dispute_openings", {
    * compares it against). */
   openedAt: integer("opened_at").notNull(),
 });
+
+/**
+ * Shop reports: a signed-in client can report a shop listing to admins.
+ * One report per client per shop per day. Does not change the shop's status.
+ */
+export const shopReports = sqliteTable("shop_reports", {
+  id: text("id").primaryKey(),
+  providerProfileId: text("provider_profile_id")
+    .notNull()
+    .references(() => providerProfiles.id),
+  reportedByWallet: text("reported_by_wallet").notNull(),
+  /** The report reason, capped at 500 characters. */
+  reason: text("reason").notNull(),
+  /** UTC epoch seconds. */
+  createdAt: integer("created_at").notNull(),
+});

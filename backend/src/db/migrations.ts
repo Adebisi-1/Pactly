@@ -172,6 +172,13 @@ const STATEMENTS: readonly string[] = [
     display_name TEXT,
     expires_at INTEGER NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS shop_reports (
+    id TEXT PRIMARY KEY,
+    provider_profile_id TEXT NOT NULL REFERENCES provider_profiles(id),
+    reported_by_wallet TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
 ];
 
 /** `true` when `table` already has a column named `column` -- `PRAGMA

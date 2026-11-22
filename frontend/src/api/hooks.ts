@@ -34,6 +34,8 @@ import type {
   ProviderApplicationInput,
   ProviderApplicationOutcome,
   RateResponse,
+  ShopReportSubmitResponse,
+  ShopReportsListResponse,
 } from "./types";
 import { FALLBACK_TRY_PER_USDC } from "../lib/money";
 import type { Session } from "../wallet";
@@ -504,4 +506,16 @@ export function useTryRate(): TryRate {
     },
   });
   return query.data ?? FALLBACK_TRY_RATE;
+}
+
+// ---------------------------------------------------------------------------
+// Shop reports: clients report a shop to admins.
+// ---------------------------------------------------------------------------
+
+export function submitShopReport(providerId: string, reason: string, session: Session): Promise<ShopReportSubmitResponse> {
+  return apiPost<ShopReportSubmitResponse>(`/providers/${providerId}/report`, { reason }, session.token);
+}
+
+export function getShopReportsForAdmin(session: Session): Promise<ShopReportsListResponse> {
+  return apiGet<ShopReportsListResponse>("/admin/shop-reports", session.token);
 }

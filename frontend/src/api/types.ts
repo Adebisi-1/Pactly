@@ -429,3 +429,28 @@ export interface AdminApplicationsResponse {
 }
 
 export type ProviderApplicationOutcome = "approve" | "reject";
+
+// ---------------------------------------------------------------------------
+// Shop reports: clients can report a shop to admins.
+// ---------------------------------------------------------------------------
+
+export interface ShopReportSubmitResponse {
+  reportId: string;
+}
+
+export interface ShopReport {
+  id: string;
+  reason: string;
+  createdAt: number;
+  reportedByWallet: string;
+  provider: {
+    id: string;
+    displayName: string;
+    walletAddress: string;
+    isApproved: boolean;
+  };
+}
+
+export interface ShopReportsListResponse {
+  reports: ShopReport[];
+}
