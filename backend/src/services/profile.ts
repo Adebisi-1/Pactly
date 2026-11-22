@@ -20,6 +20,7 @@ import {
   insertProviderProfile,
   listApprovedProviderProfiles,
   listApprovedProviderProfilesForDiscover,
+  setProviderProfileBookingsPaused,
   updateProviderProfileRules,
   type ProviderProfileRow,
 } from "../db/providerProfiles.js";
@@ -261,6 +262,10 @@ export interface ProviderProfileView {
   cancellationWindowHours: number;
   verifiedSessionCount: number;
   isApproved: boolean;
+  /** Issue #62: the shop has paused new bookings. `slots` is empty while
+   * this is `true` (existing bookings are unaffected), and the profile page
+   * says so instead of offering a slot. */
+  bookingsPaused: boolean;
   /** UTC epoch seconds, ascending. */
   slots: number[];
 }
@@ -287,6 +292,7 @@ export function buildProviderProfileView(
     cancellationWindowHours: profile.cancellationWindowHours,
     verifiedSessionCount: profile.verifiedSessionCount,
     isApproved: profile.isApproved,
+    bookingsPaused: profile.bookingsPaused,
     slots: slots.map((slot) => slot.startsAt),
   };
 }
@@ -323,7 +329,11 @@ export async function getPublicProviderProfile(
     throw new ProviderNotFoundError();
   }
   const category = await loadCategoryOrThrow(db, profile.categoryId, () => new ProviderNotFoundError());
-  const slots = await listOpenFutureSlots(db, profile.id, { now, withinSeconds: PUBLIC_SLOTS_WINDOW_SECONDS });
+  // Issue #62: a paused shop hides its new slots (existing bookings keep
+  // their slots -- those are only ever read through the booking routes).
+  const slots = profile.bookingsPaused
+    ? []
+    : await listOpenFutureSlots(db, profile.id, { now, withinSeconds: PUBLIC_SLOTS_WINDOW_SECONDS });
   return buildProviderProfileView(profile, category, slots);
 }
 
@@ -362,6 +372,27 @@ export async function updateProviderRules(
   }
   await updateProviderProfileRules(db, profile.id, input);
   return getOwnProviderProfile(db, walletAddress);
+}
+
+/**
+ * `PUT /me/provider/pause`: the signed-in shop's own pause/resume of new
+ * bookings (issue #62). Idempotent -- pausing twice keeps the shop paused,
+ * resuming twice keeps it open. Never touches `isApproved`: an admin
+ * suspension still hides the shop entirely, and this pause never clears
+ * one. Returns the updated own profile.
+ */
+export async function setProviderBookingsPaused(
+  db: Db,
+  walletAddress: string,
+  paused: boolean,
+  now: number = Math.floor(Date.now() / 1000),
+): Promise<ProviderProfileView> {
+  const profile = await getProviderProfileByWallet(db, walletAddress);
+  if (!profile) {
+    throw new NotAProviderError();
+  }
+  await setProviderProfileBookingsPaused(db, profile.id, paused);
+  return getOwnProviderProfile(db, walletAddress, now);
 }
 
 /** `PUT /me/provider/availability`: validates against the caller's own
@@ -406,6 +437,9 @@ export interface ProviderCardView {
   cancellationWindowHours: number;
   verifiedSessionCount: number;
   providerCancellationCount: number;
+  /** Issue #62: discovery shows the shop as not taking bookings while this
+   * is `true` (and `earliestSlots` is empty). */
+  bookingsPaused: boolean;
   /** UTC epoch seconds, ascending, at most {@link CARD_EARLIEST_SLOTS_LIMIT}. */
   earliestSlots: number[];
 }
@@ -433,6 +467,7 @@ export function buildProviderCardView(
     cancellationWindowHours: profile.cancellationWindowHours,
     verifiedSessionCount: profile.verifiedSessionCount,
     providerCancellationCount: profile.providerCancellationCount,
+    bookingsPaused: profile.bookingsPaused,
     earliestSlots,
   };
 }
@@ -536,6 +571,9 @@ export async function listDiscoverProviders(
   if (filters.availability !== undefined) {
     const windowSeconds = AVAILABILITY_WINDOW_SECONDS[filters.availability];
     profiles = profiles.filter((profile) => {
+      // Issue #62: a paused shop is never "available" -- it has no new slot
+      // to offer, whatever its stored rows still say.
+      if (profile.bookingsPaused) return false;
       const earliest = earliestSlotsByProvider.get(profile.id)?.[0];
       return earliest !== undefined && earliest <= now + windowSeconds;
     });
@@ -548,7 +586,11 @@ export async function listDiscoverProviders(
       // `loadCategoryOrThrow`'s own comment on the same guarantee).
       throw new TypeError(`No category exists with id "${profile.categoryId}"`);
     }
-    return buildProviderCardView(profile, category, earliestSlotsByProvider.get(profile.id) ?? []);
+    return buildProviderCardView(
+      profile,
+      category,
+      profile.bookingsPaused ? [] : (earliestSlotsByProvider.get(profile.id) ?? []),
+    );
   });
 
   cards.sort((a, b) => {

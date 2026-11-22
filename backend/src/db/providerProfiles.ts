@@ -166,6 +166,7 @@ export async function listApprovedProviderProfilesForDiscover(
       depositRateBps: providerProfiles.depositRateBps,
       cancellationWindowHours: providerProfiles.cancellationWindowHours,
       isApproved: providerProfiles.isApproved,
+      bookingsPaused: providerProfiles.bookingsPaused,
       verifiedSessionCount: providerProfiles.verifiedSessionCount,
       providerCancellationCount: providerProfiles.providerCancellationCount,
       createdAt: providerProfiles.createdAt,
@@ -224,6 +225,15 @@ export async function updateProviderProfileFromApplication(
  * marketplace. */
 export async function setProviderProfileApproved(db: Db, id: string, isApproved: boolean): Promise<void> {
   const result = await db.update(providerProfiles).set({ isApproved }).where(eq(providerProfiles.id, id));
+  if (result.changes === 0) {
+    throw new TypeError(`No provider profile exists with id "${id}"`);
+  }
+}
+
+/** Issue #62: the shop's own pause/resume of new bookings. Idempotent --
+ * pausing an already-paused shop simply writes `true` again. */
+export async function setProviderProfileBookingsPaused(db: Db, id: string, bookingsPaused: boolean): Promise<void> {
+  const result = await db.update(providerProfiles).set({ bookingsPaused }).where(eq(providerProfiles.id, id));
   if (result.changes === 0) {
     throw new TypeError(`No provider profile exists with id "${id}"`);
   }

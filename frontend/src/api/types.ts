@@ -34,6 +34,9 @@ export interface ProviderProfile {
   cancellationWindowHours: number;
   verifiedSessionCount: number;
   isApproved: boolean;
+  /** Issue #62: the shop has paused new bookings. `slots` is empty while
+   * this is `true`; existing bookings are unaffected. */
+  bookingsPaused: boolean;
   /** UTC epoch seconds, ascending. */
   slots: number[];
 }
@@ -60,6 +63,9 @@ export interface ProviderCard {
   cancellationWindowHours: number;
   verifiedSessionCount: number;
   providerCancellationCount: number;
+  /** Issue #62: discovery shows the shop as not taking bookings while this
+   * is `true` (and `earliestSlots` is empty). */
+  bookingsPaused: boolean;
   /** UTC epoch seconds, ascending, at most three. */
   earliestSlots: number[];
 }

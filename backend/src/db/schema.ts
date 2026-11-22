@@ -80,6 +80,12 @@ export const providerProfiles = sqliteTable("provider_profiles", {
   depositRateBps: integer("deposit_rate_bps").notNull(),
   cancellationWindowHours: integer("cancellation_window_hours").notNull(),
   isApproved: integer("is_approved", { mode: "boolean" }).notNull().default(false),
+  /** Issue #62: the shop's own pause on *new* bookings. Independent of
+   * `isApproved` -- an admin suspension still hides the shop entirely, and
+   * this pause never clears one. While `true`, discovery advertises the
+   * shop as not taking bookings and `holdSlot` refuses a new hold; existing
+   * bookings, locks, releases and disputes are untouched. */
+  bookingsPaused: integer("bookings_paused", { mode: "boolean" }).notNull().default(false),
   /** Increases only on the chain's `released` event (FR20); never written
    * by hand outside the event worker's own bookkeeping. */
   verifiedSessionCount: integer("verified_session_count").notNull().default(0),

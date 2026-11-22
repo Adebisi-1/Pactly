@@ -55,6 +55,7 @@ import {
   ProviderNotFoundError,
   getOwnProviderProfile,
   getPublicProviderProfile,
+  setProviderBookingsPaused,
   listCategoriesWithProviderCounts,
   listDiscoverProviders,
   suggestDiscoverQueries,
@@ -80,6 +81,7 @@ import {
   BookingEscrowStateError,
   BookingHoldExpiredError,
   BookingNotFoundError,
+  BookingsPausedError,
   InvalidDisputeReasonError,
   NothingToPayError,
   SlotTakenError,
@@ -636,6 +638,27 @@ export function createApp(db: Db, options: CreateAppOptions = {}): App {
     }
   });
 
+  /** Issue #62: the shop's own pause/resume of new bookings -- never an
+   * admin moderation action, and never a way to clear a suspension. */
+  app.put("/me/provider/pause", requirePactlyAuth, async (c) => {
+    const body = await c.req.json().catch(() => undefined);
+    if (typeof body?.paused !== "boolean") {
+      return c.json(
+        { code: "INVALID_PAUSE", message: "paused must be true or false.", details: { paused: "required" } },
+        400,
+      );
+    }
+    try {
+      const profile = await setProviderBookingsPaused(db, c.get("walletAddress"), body.paused);
+      return c.json(profile);
+    } catch (error) {
+      if (error instanceof NotAProviderError) {
+        return c.json({ code: "NOT_A_PROVIDER", message: error.message }, 404);
+      }
+      throw error;
+    }
+  });
+
   app.put("/me/provider/availability", requirePactlyAuth, async (c) => {
     const body = await c.req.json().catch(() => undefined);
     const slots: unknown = body?.slots;
@@ -753,6 +776,9 @@ export function createApp(db: Db, options: CreateAppOptions = {}): App {
     } catch (error) {
       if (error instanceof ProviderNotFoundError) {
         return c.json({ code: "PROVIDER_NOT_FOUND", message: error.message }, 404);
+      }
+      if (error instanceof BookingsPausedError) {
+        return c.json({ code: "BOOKINGS_PAUSED", message: error.message }, 409);
       }
       if (error instanceof SlotUnavailableError) {
         return c.json({ code: "SLOT_UNAVAILABLE", message: error.message }, 409);

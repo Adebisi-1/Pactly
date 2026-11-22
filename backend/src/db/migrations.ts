@@ -48,6 +48,7 @@ const STATEMENTS: readonly string[] = [
     deposit_rate_bps INTEGER NOT NULL,
     cancellation_window_hours INTEGER NOT NULL,
     is_approved INTEGER NOT NULL DEFAULT 0,
+    bookings_paused INTEGER NOT NULL DEFAULT 0,
     verified_session_count INTEGER NOT NULL DEFAULT 0,
     provider_cancellation_count INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
@@ -212,6 +213,11 @@ export function runMigrations(sqlite: Database): void {
   }
   if (!hasColumn(sqlite, "provider_profiles", "location")) {
     sqlite.exec(`ALTER TABLE provider_profiles ADD COLUMN location TEXT NOT NULL DEFAULT ''`);
+  }
+  // Issue #62: the shop's own pause on new bookings, independent of the
+  // admin-controlled `is_approved` column above.
+  if (!hasColumn(sqlite, "provider_profiles", "bookings_paused")) {
+    sqlite.exec(`ALTER TABLE provider_profiles ADD COLUMN bookings_paused INTEGER NOT NULL DEFAULT 0`);
   }
   // Story 3.4: the AD-13 slot hold's own columns -- nullable, since a
   // database created before this story has `bookings` rows that never had a

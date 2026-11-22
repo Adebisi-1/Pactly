@@ -5,7 +5,13 @@ import { CalendarBlankIcon } from "@phosphor-icons/react";
 import { ApiError } from "../../api/client";
 import { PageMasthead } from "../../components/PageMasthead";
 import { SignInPanel } from "../../components/SignInPanel";
-import { useOwnProviderProfile, useTryRate, useUpdateProviderAvailability, useUpdateProviderRules } from "../../api/hooks";
+import {
+  useOwnProviderProfile,
+  useSetProviderBookingsPaused,
+  useTryRate,
+  useUpdateProviderAvailability,
+  useUpdateProviderRules,
+} from "../../api/hooks";
 import { TryAmount } from "../../components/TryAmount";
 import { tryToUsdcSmallestUnit, usdcToTry } from "../../lib/money";
 import { getSession, signOut, type Session } from "../../wallet";
@@ -103,6 +109,7 @@ export function AvailabilityPage() {
   const profileQuery = useOwnProviderProfile(session);
   const updateRules = useUpdateProviderRules(session);
   const updateAvailability = useUpdateProviderAvailability(session);
+  const setBookingsPaused = useSetProviderBookingsPaused(session);
   const { rate } = useTryRate();
 
   // The price is stored in USDC smallest units (AD-7) but typed in TRY.
@@ -284,6 +291,29 @@ export function AvailabilityPage() {
           once you're approved.
         </div>
       )}
+
+      <section className="card" style={{ marginBottom: "var(--space-6)" }}>
+        <h2 style={{ fontSize: "var(--text-18)", marginTop: 0 }}>New bookings</h2>
+        {profile.bookingsPaused && (
+          <div className="banner" role="status" style={{ marginBottom: "var(--space-4)" }}>
+            New bookings are paused. Clients can&rsquo;t hold a slot right now. Your existing bookings, locks and
+            disputes are untouched.
+          </div>
+        )}
+        {!profile.bookingsPaused && <p>Clients can book your open slots.</p>}
+        <button
+          type="button"
+          className="button-ghost"
+          onClick={() => setBookingsPaused.mutate(!profile.bookingsPaused)}
+          disabled={setBookingsPaused.isPending}
+        >
+          {setBookingsPaused.isPending
+            ? "Saving…"
+            : profile.bookingsPaused
+              ? "Resume new bookings"
+              : "Pause new bookings"}
+        </button>
+      </section>
 
       <section className="card" style={{ marginBottom: "var(--space-6)" }}>
         <h2 style={{ fontSize: "var(--text-18)", marginTop: 0 }}>Price and deposit</h2>
