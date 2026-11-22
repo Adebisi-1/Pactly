@@ -64,7 +64,7 @@ export function ProviderProfilePage() {
     return null;
   }
 
-  const dayGroups = groupSlotsByDay(profile.slots);
+  const dayGroups = groupSlotsByDay(profile.slots, profile.timezone);
 
   return (
     <div className="page">
@@ -91,7 +91,7 @@ export function ProviderProfilePage() {
         </div>
 
         <div style={{ marginTop: "var(--space-6)" }}>
-          <h2 style={{ fontSize: "var(--text-18)" }}>Upcoming slots</h2>
+          <h2 style={{ fontSize: "var(--text-18)" }}>Upcoming slots · {profile.timezone}</h2>
           {dayGroups.length === 0 ? (
             <p className="banner">No open slots in the next 30 days. Check back soon.</p>
           ) : (
@@ -100,7 +100,13 @@ export function ProviderProfilePage() {
                 <div className="slot-day__label">{group.dayLabel}</div>
                 <div className="slot-day__chips">
                   {group.slots.map((startsAt) => (
-                    <SlotChip key={startsAt} startsAt={startsAt} selected={startsAt === selectedSlot} onSelect={selectSlot} />
+                    <SlotChip
+                      key={startsAt}
+                      startsAt={startsAt}
+                      selected={startsAt === selectedSlot}
+                      onSelect={selectSlot}
+                      timeZone={profile.timezone}
+                    />
                   ))}
                 </div>
               </div>

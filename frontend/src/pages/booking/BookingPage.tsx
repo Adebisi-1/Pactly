@@ -25,7 +25,7 @@ import { ProviderHeader } from "../../components/ProviderHeader";
 import { Seal } from "../../components/Seal";
 import { TryAmount, useFormatTry } from "../../components/TryAmount";
 import { providerPhotoSrc } from "../../lib/providerPhotos";
-import { formatSlotDay, formatSlotTime } from "../../lib/time";
+import { formatSlotDay, formatSlotTime, formatSlotWithZone } from "../../lib/time";
 import { signInErrorMessage } from "../../components/SignInPanel";
 import { getSession, signIn, signOut, signXdr, type Session } from "../../wallet";
 
@@ -629,7 +629,7 @@ export function BookingPage() {
         <section className="booking-lane booking-lane--client">
           <h2 className="booking-lane__heading">YOUR SIDE</h2>
           <p className="booking-lane__appointment">
-            {formatSlotDay(slotStartsAt)} · {formatSlotTime(slotStartsAt)}
+            {formatSlotWithZone(slotStartsAt, profile.timezone)}
           </p>
           <p className="booking-lane__meta">
             {SESSION_FORMAT_LABEL[profile.sessionFormat] ?? profile.sessionFormat} · {profile.sessionLengthMinutes} min
@@ -691,7 +691,7 @@ export function BookingPage() {
                 <div className="slot-day__chips" style={{ marginTop: "var(--space-3)" }}>
                   {holdError.sameDaySlots.map((startsAt) => (
                     <Link key={startsAt} to={`/book/${providerId}?slot=${startsAt}`} className="slot-chip tabular-nums">
-                      {formatSlotTime(startsAt)}
+                      {formatSlotWithZone(startsAt, profile.timezone)}
                     </Link>
                   ))}
                 </div>

@@ -51,6 +51,7 @@ import type { Db } from "./db/client.js";
 import {
   InvalidAvailabilitySlotsError,
   InvalidProviderRulesError,
+  InvalidTimezoneError,
   NotAProviderError,
   ProviderNotFoundError,
   getOwnProviderProfile,
@@ -61,6 +62,7 @@ import {
   suggestDiscoverQueries,
   updateProviderAvailability,
   updateProviderRules,
+  updateProviderTimezone,
   type DiscoverFilters,
 } from "./services/profile.js";
 import {
@@ -654,6 +656,25 @@ export function createApp(db: Db, options: CreateAppOptions = {}): App {
     } catch (error) {
       if (error instanceof NotAProviderError) {
         return c.json({ code: "NOT_A_PROVIDER", message: error.message }, 404);
+      }
+      throw error;
+    }
+  });
+
+  /** Issue #64: the shop's IANA timezone. Slots stay UTC instants; only
+   * their labels follow this zone. */
+  app.put("/me/provider/timezone", requirePactlyAuth, async (c) => {
+    const body = await c.req.json().catch(() => undefined);
+    const timezone = typeof body?.timezone === "string" ? body.timezone : "";
+    try {
+      const profile = await updateProviderTimezone(db, c.get("walletAddress"), timezone);
+      return c.json(profile);
+    } catch (error) {
+      if (error instanceof NotAProviderError) {
+        return c.json({ code: "NOT_A_PROVIDER", message: error.message }, 404);
+      }
+      if (error instanceof InvalidTimezoneError) {
+        return c.json({ code: "INVALID_TIMEZONE", message: error.message, details: error.details }, 400);
       }
       throw error;
     }

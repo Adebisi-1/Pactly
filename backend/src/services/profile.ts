@@ -22,6 +22,7 @@ import {
   listApprovedProviderProfilesForDiscover,
   setProviderProfileBookingsPaused,
   updateProviderProfileRules,
+  updateProviderProfileTimezone,
   type ProviderProfileRow,
 } from "../db/providerProfiles.js";
 import {
@@ -32,6 +33,7 @@ import {
   type AvailabilitySlotRow,
 } from "../db/availabilitySlots.js";
 import { getCategoryById, getCategoryBySlug, listCategories, type CategoryRow } from "../db/categories.js";
+import { isValidTimeZone } from "./timezone.js";
 import type { Db } from "../db/client.js";
 
 /** Pactly's only supported asset for now (matches `services/booking.ts`'s
@@ -136,6 +138,16 @@ export class InvalidProviderRulesError extends Error {
   constructor(details: Record<string, string>) {
     super("One or more rule values are invalid.");
     this.name = "InvalidProviderRulesError";
+    this.details = details;
+  }
+}
+
+/** Issue #64: a timezone that is not an IANA name `Intl` knows. */
+export class InvalidTimezoneError extends Error {
+  readonly details: Record<string, string>;
+  constructor(details: Record<string, string>) {
+    super("That timezone isn't valid.");
+    this.name = "InvalidTimezoneError";
     this.details = details;
   }
 }
@@ -266,6 +278,9 @@ export interface ProviderProfileView {
    * this is `true` (existing bookings are unaffected), and the profile page
    * says so instead of offering a slot. */
   bookingsPaused: boolean;
+  /** Issue #64: the shop's IANA timezone -- every slot label is rendered
+   * in this zone, never in the viewer's browser zone. */
+  timezone: string;
   /** UTC epoch seconds, ascending. */
   slots: number[];
 }
@@ -293,6 +308,7 @@ export function buildProviderProfileView(
     verifiedSessionCount: profile.verifiedSessionCount,
     isApproved: profile.isApproved,
     bookingsPaused: profile.bookingsPaused,
+    timezone: profile.timezone,
     slots: slots.map((slot) => slot.startsAt),
   };
 }
@@ -375,6 +391,7 @@ export async function updateProviderRules(
 }
 
 /**
+/**
  * `PUT /me/provider/pause`: the signed-in shop's own pause/resume of new
  * bookings (issue #62). Idempotent -- pausing twice keeps the shop paused,
  * resuming twice keeps it open. Never touches `isApproved`: an admin
@@ -392,6 +409,29 @@ export async function setProviderBookingsPaused(
     throw new NotAProviderError();
   }
   await setProviderProfileBookingsPaused(db, profile.id, paused);
+  return getOwnProviderProfile(db, walletAddress, now);
+}
+
+/**
+ * `PUT /me/provider/timezone` (issue #64): sets the shop's IANA timezone.
+ * An unknown zone is rejected and nothing is saved. Changing the zone only
+ * changes how a slot is *labelled* -- every stored instant, and so every
+ * lock, stays exactly what it was.
+ */
+export async function updateProviderTimezone(
+  db: Db,
+  walletAddress: string,
+  timezone: string,
+  now: number = Math.floor(Date.now() / 1000),
+): Promise<ProviderProfileView> {
+  const profile = await getProviderProfileByWallet(db, walletAddress);
+  if (!profile) {
+    throw new NotAProviderError();
+  }
+  if (!isValidTimeZone(timezone)) {
+    throw new InvalidTimezoneError({ timezone: "Enter an IANA timezone, e.g. Europe/Istanbul." });
+  }
+  await updateProviderProfileTimezone(db, profile.id, timezone);
   return getOwnProviderProfile(db, walletAddress, now);
 }
 
@@ -440,6 +480,9 @@ export interface ProviderCardView {
   /** Issue #62: discovery shows the shop as not taking bookings while this
    * is `true` (and `earliestSlots` is empty). */
   bookingsPaused: boolean;
+  /** Issue #64: the shop's IANA timezone, so a card's slot chips can be
+   * labelled in the shop's zone rather than the viewer's. */
+  timezone: string;
   /** UTC epoch seconds, ascending, at most {@link CARD_EARLIEST_SLOTS_LIMIT}. */
   earliestSlots: number[];
 }
@@ -468,6 +511,7 @@ export function buildProviderCardView(
     verifiedSessionCount: profile.verifiedSessionCount,
     providerCancellationCount: profile.providerCancellationCount,
     bookingsPaused: profile.bookingsPaused,
+    timezone: profile.timezone,
     earliestSlots,
   };
 }

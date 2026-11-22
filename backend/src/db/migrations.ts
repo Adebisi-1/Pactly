@@ -40,6 +40,7 @@ const STATEMENTS: readonly string[] = [
     id TEXT PRIMARY KEY,
     wallet_address TEXT NOT NULL UNIQUE,
     category_id TEXT NOT NULL REFERENCES categories(id),
+    timezone TEXT NOT NULL DEFAULT 'Europe/Istanbul',
     bio TEXT NOT NULL DEFAULT '',
     languages TEXT NOT NULL DEFAULT '[]',
     session_format TEXT NOT NULL,
@@ -218,6 +219,11 @@ export function runMigrations(sqlite: Database): void {
   // admin-controlled `is_approved` column above.
   if (!hasColumn(sqlite, "provider_profiles", "bookings_paused")) {
     sqlite.exec(`ALTER TABLE provider_profiles ADD COLUMN bookings_paused INTEGER NOT NULL DEFAULT 0`);
+  }
+  // Issue #64: the shop's own IANA timezone for labelling its slots. A
+  // pre-existing row defaults to the zone the hours grid already used.
+  if (!hasColumn(sqlite, "provider_profiles", "timezone")) {
+    sqlite.exec(`ALTER TABLE provider_profiles ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Europe/Istanbul'`);
   }
   // Story 3.4: the AD-13 slot hold's own columns -- nullable, since a
   // database created before this story has `bookings` rows that never had a

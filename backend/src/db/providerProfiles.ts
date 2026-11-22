@@ -167,6 +167,7 @@ export async function listApprovedProviderProfilesForDiscover(
       cancellationWindowHours: providerProfiles.cancellationWindowHours,
       isApproved: providerProfiles.isApproved,
       bookingsPaused: providerProfiles.bookingsPaused,
+      timezone: providerProfiles.timezone,
       verifiedSessionCount: providerProfiles.verifiedSessionCount,
       providerCancellationCount: providerProfiles.providerCancellationCount,
       createdAt: providerProfiles.createdAt,
@@ -234,6 +235,16 @@ export async function setProviderProfileApproved(db: Db, id: string, isApproved:
  * pausing an already-paused shop simply writes `true` again. */
 export async function setProviderProfileBookingsPaused(db: Db, id: string, bookingsPaused: boolean): Promise<void> {
   const result = await db.update(providerProfiles).set({ bookingsPaused }).where(eq(providerProfiles.id, id));
+  if (result.changes === 0) {
+    throw new TypeError(`No provider profile exists with id "${id}"`);
+  }
+}
+
+/** Issue #64: writes the shop's own IANA timezone. Only ever changes the
+ * label a slot is rendered with -- the stored `starts_at` instants are not
+ * touched. */
+export async function updateProviderProfileTimezone(db: Db, id: string, timezone: string): Promise<void> {
+  const result = await db.update(providerProfiles).set({ timezone }).where(eq(providerProfiles.id, id));
   if (result.changes === 0) {
     throw new TypeError(`No provider profile exists with id "${id}"`);
   }
