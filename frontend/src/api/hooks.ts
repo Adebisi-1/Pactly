@@ -19,6 +19,7 @@ import type {
   MyBookingsResponse,
   OpenDisputeResponse,
   ProviderBookingsResponse,
+  ProviderBreak,
   ProviderProfile,
   ProvidersResponse,
   QuoteResponse,
@@ -175,6 +176,18 @@ export function useUpdateProviderTimezone(session: Session | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (timezone: string) => apiPut<ProviderProfile>("/me/provider/timezone", { timezone }, session?.token),
+    onSuccess: (profile) => {
+      queryClient.setQueryData(OWN_PROVIDER_KEY(session?.walletAddress), profile);
+    },
+  });
+}
+
+/** Issue #65: `PUT /me/provider/breaks` -- replaces the shop's weekly
+ * breaks; the response carries the pruned slot set too. */
+export function useUpdateProviderBreaks(session: Session | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (breaks: ProviderBreak[]) => apiPut<ProviderProfile>("/me/provider/breaks", { breaks }, session?.token),
     onSuccess: (profile) => {
       queryClient.setQueryData(OWN_PROVIDER_KEY(session?.walletAddress), profile);
     },

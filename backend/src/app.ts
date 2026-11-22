@@ -60,6 +60,7 @@ import {
   listCategoriesWithProviderCounts,
   listDiscoverProviders,
   suggestDiscoverQueries,
+  setProviderBreaks,
   updateProviderAvailability,
   updateProviderRules,
   updateProviderTimezone,
@@ -115,6 +116,7 @@ import { defaultEscrowAdapter } from "./escrow/trustless-work/client.js";
 import type { EscrowAdapter } from "./escrow/interface.js";
 import { PaymentFailedError, PaymentUnavailableError } from "./payments/errors.js";
 import type { SubmitPaymentDeps } from "./payments/stellar.js";
+import { InvalidBreaksError } from "./services/availability.js";
 import { config } from "./config.js";
 import { DISPUTE_OUTCOMES, type DisputeOutcome, type DisputeReason } from "./db/schema.js";
 import { getBookingById } from "./db/bookings.js";
@@ -656,6 +658,25 @@ export function createApp(db: Db, options: CreateAppOptions = {}): App {
     } catch (error) {
       if (error instanceof NotAProviderError) {
         return c.json({ code: "NOT_A_PROVIDER", message: error.message }, 404);
+      }
+      throw error;
+    }
+  });
+
+  /** Issue #65: the shop's own weekly breaks -- a window cut out of one
+   * weekday's hours. Open slots inside a saved break stop being offered; a
+   * booking already inside it is listed and never cancelled. */
+  app.put("/me/provider/breaks", requirePactlyAuth, async (c) => {
+    const body = await c.req.json().catch(() => undefined);
+    try {
+      const profile = await setProviderBreaks(db, c.get("walletAddress"), body?.breaks);
+      return c.json(profile);
+    } catch (error) {
+      if (error instanceof NotAProviderError) {
+        return c.json({ code: "NOT_A_PROVIDER", message: error.message }, 404);
+      }
+      if (error instanceof InvalidBreaksError) {
+        return c.json({ code: "INVALID_BREAKS", message: error.message, details: error.details }, 400);
       }
       throw error;
     }

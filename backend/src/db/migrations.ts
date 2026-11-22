@@ -166,6 +166,16 @@ const STATEMENTS: readonly string[] = [
     transports TEXT NOT NULL DEFAULT '[]',
     created_at INTEGER NOT NULL
   )`,
+  // Issue #65: a break cut out of one weekday's working hours.
+  `CREATE TABLE IF NOT EXISTS provider_breaks (
+    id TEXT PRIMARY KEY,
+    provider_profile_id TEXT NOT NULL REFERENCES provider_profiles(id),
+    weekday INTEGER NOT NULL,
+    start_minute INTEGER NOT NULL,
+    end_minute INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE (provider_profile_id, weekday, start_minute)
+  )`,
   `CREATE TABLE IF NOT EXISTS webauthn_challenges (
     id TEXT PRIMARY KEY,
     kind TEXT NOT NULL,
@@ -220,8 +230,8 @@ export function runMigrations(sqlite: Database): void {
   if (!hasColumn(sqlite, "provider_profiles", "bookings_paused")) {
     sqlite.exec(`ALTER TABLE provider_profiles ADD COLUMN bookings_paused INTEGER NOT NULL DEFAULT 0`);
   }
-  // Issue #64: the shop's own IANA timezone for labelling its slots. A
-  // pre-existing row defaults to the zone the hours grid already used.
+  // Issues #64/#65: the shop's IANA timezone for slot labels and weekday
+  // breaks. A pre-existing row defaults to the zone the hours grid used.
   if (!hasColumn(sqlite, "provider_profiles", "timezone")) {
     sqlite.exec(`ALTER TABLE provider_profiles ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Europe/Istanbul'`);
   }
