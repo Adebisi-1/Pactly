@@ -79,6 +79,7 @@ import {
   type EscrowActionKind,
 } from "../db/bookings.js";
 import { getSlotById, getSlotByProviderAndStart } from "../db/availabilitySlots.js";
+import { isDateClosed, utcDateFor } from "../db/closedDates.js";
 import {
   isSlotInsideBufferAfterLocked,
   listLockedBookingStarts,
