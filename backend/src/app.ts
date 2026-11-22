@@ -117,6 +117,11 @@ import type { EscrowAdapter } from "./escrow/interface.js";
 import { PaymentFailedError, PaymentUnavailableError } from "./payments/errors.js";
 import type { SubmitPaymentDeps } from "./payments/stellar.js";
 import { InvalidBreaksError } from "./services/availability.js";
+import {
+  InvalidExportRangeError,
+  exportProviderBookings,
+  parseExportRange,
+} from "./services/bookingsExport.js";
 import { config } from "./config.js";
 import { DISPUTE_OUTCOMES, type DisputeOutcome, type DisputeReason } from "./db/schema.js";
 import { getBookingById } from "./db/bookings.js";
@@ -1151,6 +1156,33 @@ export function createApp(db: Db, options: CreateAppOptions = {}): App {
   app.get("/me/bookings", requirePactlyAuth, async (c) => {
     const bookingsList = await listBookingsForClient(db, c.get("walletAddress"));
     return c.json({ bookings: bookingsList });
+  });
+
+  /** Issue #67: the signed-in shop downloads its own bookings as CSV for a
+   * from/to range. An inverted range is a `400 INVALID_RANGE`; another
+   * shop's bookings are never read. */
+  app.get("/me/provider/bookings/export", requirePactlyAuth, async (c) => {
+    let range;
+    try {
+      range = parseExportRange(c.req.query("from"), c.req.query("to"));
+    } catch (error) {
+      if (error instanceof InvalidExportRangeError) {
+        return c.json({ code: "INVALID_RANGE", message: error.message }, 400);
+      }
+      throw error;
+    }
+    try {
+      const { csv, fileName } = await exportProviderBookings(db, c.get("walletAddress"), range);
+      return c.body(csv, 200, {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="${fileName}"`,
+      });
+    } catch (error) {
+      if (error instanceof NotAProviderError) {
+        return c.json({ code: "NOT_A_PROVIDER", message: error.message }, 404);
+      }
+      throw error;
+    }
   });
 
   /** The provider panel's "Bookings" view: every booking against the

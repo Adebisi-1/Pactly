@@ -4,7 +4,7 @@
  * `../chain/event-worker.ts` -- which is what AD-1/AD-3 mean in practice:
  * nothing else may write `escrow_state`.
  */
-import { and, eq, gt, inArray, isNotNull, isNull, ne, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lte, ne, notInArray, or, sql } from "drizzle-orm";
 
 import type { Db, DbOrTx } from "./client.js";
 import {
@@ -631,6 +631,32 @@ export async function listBookingRowsForProvider(db: Db, providerProfileId: stri
     .from(bookings)
     .leftJoin(availabilitySlots, eq(bookings.slotId, availabilitySlots.id))
     .where(eq(bookings.providerProfileId, providerProfileId));
+  return rows.map((row) => ({ booking: row.booking, slotStartsAt: row.slotStartsAt ?? null }));
+}
+
+/** Issue #67: one provider's bookings whose own slot starts inside
+ * `[from, to]` (UTC epoch seconds, inclusive) -- the CSV export's read.
+ * A booking with no slot has no appointment time and is never in a range.
+ * Scoped to one provider profile, so another shop's rows can never be
+ * selected through this function. */
+export async function listBookingRowsForProviderInRange(
+  db: Db,
+  providerProfileId: string,
+  from: number,
+  to: number,
+): Promise<BookingWithSlot[]> {
+  const rows = await db
+    .select({ booking: bookings, slotStartsAt: availabilitySlots.startsAt })
+    .from(bookings)
+    .innerJoin(availabilitySlots, eq(bookings.slotId, availabilitySlots.id))
+    .where(
+      and(
+        eq(bookings.providerProfileId, providerProfileId),
+        gte(availabilitySlots.startsAt, from),
+        lte(availabilitySlots.startsAt, to),
+      ),
+    )
+    .orderBy(asc(availabilitySlots.startsAt));
   return rows.map((row) => ({ booking: row.booking, slotStartsAt: row.slotStartsAt ?? null }));
 }
 
