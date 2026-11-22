@@ -1101,6 +1101,15 @@ export function createApp(db: Db, options: CreateAppOptions = {}): App {
     if (error instanceof QuoteMismatchError) {
       return c.json({ code: "QUOTE_MISMATCH", message: error.message }, 409);
     }
+    if (error instanceof AnchorQuoteUnsupportedError) {
+      return c.json(
+        { code: "QUOTE_UNSUPPORTED", message: "The anchor doesn't offer a local-currency price for this right now." },
+        409,
+      );
+    }
+    if (error instanceof AnchorQuoteUnavailableError) {
+      return c.json({ code: "QUOTE_UNAVAILABLE", message: "We couldn't reach the currency exchange just now." }, 503);
+    }
     if (error instanceof AmountOutOfRangeError) {
       return c.json(
         {

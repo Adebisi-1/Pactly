@@ -137,6 +137,7 @@ interface RouterState {
   depositCalls: number;
   lastDepositAmount?: string;
   price: string;
+  priceFail?: boolean;
 }
 
 function anchorRouter(anchorServer: Keypair, state: RouterState): AnchorFetchLike {
@@ -155,6 +156,7 @@ function anchorRouter(anchorServer: Keypair, state: RouterState): AnchorFetchLik
       return json(200, { assets: [{ asset: SELL_ASSET }, { asset: "iso4217:TRY" }] });
     }
     if (parsed.pathname === "/sep38/price") {
+      if (state.priceFail) return json(503, { error: "down" });
       return json(200, { buy_amount: state.price });
     }
     if (parsed.pathname === "/sep6/info") {
@@ -277,5 +279,77 @@ test("a refreshed quote is the price submitted to the anchor; a stale one blocks
     assert.equal(state.depositCalls, 0, "a stale quote never reaches the anchor");
   } finally {
     closeDatabase(second);
+  }
+});
+
+test("a confirmed quote with an invented fiat amount is refused, even when it looks fresh", async () => {
+  resetCaches();
+  const result = openTestDatabase();
+  try {
+    const client = Keypair.random().publicKey();
+    const hold = await seedHold(result, client);
+    await upsertAnchorJwt(result.db, {
+      walletAddress: client, jwt: fakeJwt(client), expiresAt: Date.now() + 60_000, updatedAt: Date.now(),
+    });
+    const state: RouterState = { depositCalls: 0, price: "21843.51" };
+    const router = anchorRouter(Keypair.random(), state);
+    const app = createApp(result.db, {
+      quoteFetchImpl: router,
+      localDepositDeps: { fetchImpl: router, hasTrustline: async () => true },
+    });
+
+    const inventedQuote = {
+      amount: "2000000",
+      quotedAt: Math.floor(Date.now() / 1000),
+      maxAgeSeconds: 60,
+      expiresAt: Math.floor(Date.now() / 1000) + 60,
+      fiat: { amount: "1.00", currency: "TRY" },
+    };
+    const response = await app.request(`/bookings/${hold.bookingId}/deposit/local`, {
+      method: "POST",
+      headers: await headers(client),
+      body: JSON.stringify({ quote: inventedQuote }),
+    });
+    assert.equal(response.status, 409);
+    assert.equal(((await response.json()) as { code: string }).code, "QUOTE_MISMATCH");
+    assert.equal(state.depositCalls, 0, "an invented price never reaches the anchor");
+  } finally {
+    closeDatabase(result);
+  }
+});
+
+test("a confirmed quote is blocked when the backend cannot refresh the anchor's price", async () => {
+  resetCaches();
+  const result = openTestDatabase();
+  try {
+    const client = Keypair.random().publicKey();
+    const hold = await seedHold(result, client);
+    await upsertAnchorJwt(result.db, {
+      walletAddress: client, jwt: fakeJwt(client), expiresAt: Date.now() + 60_000, updatedAt: Date.now(),
+    });
+    const state: RouterState = { depositCalls: 0, price: "21843.51", priceFail: true };
+    const router = anchorRouter(Keypair.random(), state);
+    const app = createApp(result.db, {
+      quoteFetchImpl: router,
+      localDepositDeps: { fetchImpl: router, hasTrustline: async () => true },
+    });
+
+    const quote = {
+      amount: "2000000",
+      quotedAt: Math.floor(Date.now() / 1000),
+      maxAgeSeconds: 60,
+      expiresAt: Math.floor(Date.now() / 1000) + 60,
+      fiat: { amount: "21843.51", currency: "TRY" },
+    };
+    const response = await app.request(`/bookings/${hold.bookingId}/deposit/local`, {
+      method: "POST",
+      headers: await headers(client),
+      body: JSON.stringify({ quote }),
+    });
+    assert.equal(response.status, 503);
+    assert.equal(((await response.json()) as { code: string }).code, "QUOTE_UNAVAILABLE");
+    assert.equal(state.depositCalls, 0, "a failed price refresh blocks the deposit");
+  } finally {
+    closeDatabase(result);
   }
 });
