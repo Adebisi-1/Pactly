@@ -55,6 +55,7 @@ import {
   getBookingById,
   getBookingsByIds,
   getActiveBookingForWalletAndSlot,
+  getExpiredHoldForWalletAndSlot,
   getReconcilableBookings,
   countPendingHoldsForWallet,
   insertBooking,
@@ -254,6 +255,9 @@ export interface HoldSlotInput {
   /** UTC epoch seconds -- must match one of the provider's own published
    * slots exactly. */
   slotStartsAt: number;
+  /** `true` only for an explicit "hold this slot again" action. Resume
+   * reads must not silently replace an expired hold. */
+  renewExpired?: boolean;
   /** The caller's own `Date.prototype.getTimezoneOffset()` value (minutes
    * to add to local time to reach UTC) -- used only to compute
    * `sameDaySlots`'s calendar-day window in the caller's own local day
@@ -273,6 +277,9 @@ export interface HoldSlotResult {
    * `cancelDeadline`, never from the browser clock alone. */
   serverTime: number;
   provider: BookingProviderSummary;
+  /** Set when a resume read finds an expired, never-deployed hold rather
+   * than an active hold or a new hold. */
+  isExpiredHold?: true;
   /** `true` only when `cancelDeadline` has already passed at hold time --
    * the deposit is still locked as normal, but there is no free
    * cancellation window left to speak of. Omitted (never `false`) when it
@@ -368,6 +375,23 @@ export async function holdSlot(db: Db, input: HoldSlotInput, deps: HoldSlotDeps 
       provider,
       ...(existing.cancelDeadline <= now ? { freeCancellationEnded: true as const } : {}),
     };
+  }
+
+  if (!input.renewExpired) {
+    const expired = await getExpiredHoldForWalletAndSlot(db, slot.id, input.clientWalletAddress, now);
+    if (expired) {
+      return {
+        bookingId: expired.id,
+        holdExpiresAt: expired.holdExpiresAt ?? now,
+        deposit: { amount: expired.depositAmount, asset: ASSET },
+        balance: { amount: expired.balanceAmount, asset: ASSET },
+        price: { amount: (BigInt(expired.depositAmount) + BigInt(expired.balanceAmount)).toString(), asset: ASSET },
+        cancelDeadline: expired.cancelDeadline,
+        serverTime: now,
+        provider,
+        isExpiredHold: true,
+      };
+    }
   }
 
   // Review follow-up: cap pending (unlocked) holds per wallet so one wallet
@@ -518,16 +542,19 @@ async function requireProviderAddress(db: Db, booking: BookingRow): Promise<stri
 }
 
 /** Refuses {@link BookingHoldExpiredError} once `holdExpiresAt` has passed
- * (`<= now`, matching the exact boundary every other expiry check in this
- * codebase uses -- `insertBookingHoldIfSlotFree`'s own "active" definition
- * is `> now`, so a row exactly at `now` is expired, never both) with
- * `escrowState` still `null`. A `null` `holdExpiresAt` (a booking inserted
+ * (`< now` strictly past; exactly at `holdExpiresAt` is still active) with
+ * `escrowState` still `null` and no contract id. A `null` `holdExpiresAt` (a booking inserted
  * before Story 3.4, or through the plain `createBookingHold` helper) never
  * expires -- there is nothing to compare against. Once `escrowState` is set
  * the hold is moot (the deposit already reconciled), so this never fires
  * for a booking past that point either. */
 function requireHoldNotExpired(booking: BookingRow, now: number): void {
-  if (booking.escrowState === null && booking.holdExpiresAt !== null && booking.holdExpiresAt <= now) {
+  if (
+    booking.escrowState === null
+    && booking.escrowContractId === null
+    && booking.holdExpiresAt !== null
+    && booking.holdExpiresAt < now
+  ) {
     throw new BookingHoldExpiredError();
   }
 }
@@ -1819,7 +1846,12 @@ export interface ProviderBookingListItem extends BookingListItemBase {
 }
 
 function isExpiredHoldRow(booking: BookingRow, now: number): boolean {
-  return booking.escrowState === null && booking.holdExpiresAt !== null && booking.holdExpiresAt < now;
+  return (
+    booking.escrowState === null
+    && booking.escrowContractId === null
+    && booking.holdExpiresAt !== null
+    && booking.holdExpiresAt < now
+  );
 }
 
 /** Upcoming appointments first, soonest first; then past ones, most recent

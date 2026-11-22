@@ -159,7 +159,12 @@ export function BookingPage() {
   // resuming a flow already in progress is a different, allowed case
   // (submit is permitted after expiry; this only covers the *idle* case).
   useEffect(() => {
-    if (phase === "idle" && hold && holdSecondsLeft === 0) {
+    if (
+      phase === "idle"
+      && hold
+      && !engineRef.current.contractId
+      && hold.holdExpiresAt < Math.floor(Date.now() / 1000)
+    ) {
       setHold(undefined);
       setHoldEndedWhileIdle(true);
       engineRef.current = {};
@@ -216,6 +221,11 @@ export function BookingPage() {
     void holdMutation
       .mutateAsync({ providerId, slotStartsAt, token: session.token, tzOffsetMinutes: new Date().getTimezoneOffset() })
       .then((result) => {
+        if (result.isExpiredHold) {
+          setHold(undefined);
+          setHoldEndedWhileIdle(true);
+          return;
+        }
         setHold(result);
         setHoldEndedWhileIdle(false);
       })
@@ -280,7 +290,18 @@ export function BookingPage() {
       // relying on a `useHoldSlot(session)`-style hook whose closure would
       // still hold the *previous* (absent) session on this very first call
       // -- `setSession` above only takes effect on the next render.
-      const result = await holdMutation.mutateAsync({ providerId, slotStartsAt, token: activeSession.token, tzOffsetMinutes: new Date().getTimezoneOffset() });
+      const result = await holdMutation.mutateAsync({
+        providerId,
+        slotStartsAt,
+        token: activeSession.token,
+        tzOffsetMinutes: new Date().getTimezoneOffset(),
+        renewExpired: holdEndedWhileIdle,
+      });
+      if (result.isExpiredHold) {
+        setHold(undefined);
+        setHoldEndedWhileIdle(true);
+        return;
+      }
       setHold(result);
     } catch (error) {
       if (error instanceof ApiError) {

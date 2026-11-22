@@ -185,6 +185,7 @@ export interface HoldSlotInput {
   providerId: string;
   slotStartsAt: number;
   tzOffsetMinutes?: number;
+  renewExpired?: boolean;
 }
 
 /**

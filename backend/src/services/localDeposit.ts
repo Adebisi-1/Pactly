@@ -63,7 +63,12 @@ export class SandboxOnlyError extends Error {
 }
 
 function requireHoldNotExpired(booking: BookingRow, now: number): void {
-  if (booking.escrowState === null && booking.holdExpiresAt !== null && booking.holdExpiresAt <= now) {
+  if (
+    booking.escrowState === null
+    && booking.escrowContractId === null
+    && booking.holdExpiresAt !== null
+    && booking.holdExpiresAt < now
+  ) {
     throw new BookingHoldExpiredError();
   }
 }
