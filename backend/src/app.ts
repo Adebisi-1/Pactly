@@ -138,6 +138,13 @@ import {
   submitLocalDepositTrustline,
   type LocalDepositDeps,
 } from "./services/localDeposit.js";
+import {
+  InvalidReportReasonError,
+  ReportRateLimitError,
+  ShopNotFoundError,
+  getShopReportsForAdmin,
+  submitShopReport,
+} from "./services/shopReports.js";
 
 export interface Variables {
   /** Set by `requirePactlyAuth` once a request's Pactly JWT verifies --
@@ -1469,6 +1476,52 @@ export function createApp(db: Db, options: CreateAppOptions = {}): App {
       }
       throw error;
     }
+  });
+
+  // ---------------------------------------------------------------------
+  // Shop reports: clients can report a shop listing to admins.
+  // ---------------------------------------------------------------------
+
+  /** A signed-in client submits a report against an approved shop. Rate
+   * limited to once per day per shop. */
+  app.post("/providers/:id/report", requirePactlyAuth, async (c) => {
+    const providerProfileId = c.req.param("id");
+    if (!providerProfileId) {
+      return c.json({ code: "invalid_request", message: "provider id is required." }, 400);
+    }
+    const body = await c.req.json().catch(() => undefined);
+    const reason = typeof body?.reason === "string" ? body.reason : "";
+    
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const result = await submitShopReport(
+        db,
+        {
+          providerProfileId,
+          reportedByWallet: c.get("walletAddress"),
+          reason,
+        },
+        now,
+      );
+      return c.json(result, 201);
+    } catch (error) {
+      if (error instanceof ShopNotFoundError) {
+        return c.json({ code: "SHOP_NOT_FOUND", message: error.message }, 404);
+      }
+      if (error instanceof InvalidReportReasonError) {
+        return c.json({ code: "INVALID_REASON", message: error.message }, 400);
+      }
+      if (error instanceof ReportRateLimitError) {
+        return c.json({ code: "RATE_LIMIT", message: error.message }, 429);
+      }
+      throw error;
+    }
+  });
+
+  /** Admins list all shop reports, newest first. */
+  app.get("/admin/shop-reports", requirePactlyAuth, requireAdmin, async (c) => {
+    const reports = await getShopReportsForAdmin(db);
+    return c.json({ reports });
   });
 
   return app;
