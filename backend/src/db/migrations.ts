@@ -344,6 +344,13 @@ export function runMigrations(sqlite: Database): void {
   if (!hasColumn(sqlite, "bookings", "anchor_trustline_tx_hash")) {
     sqlite.exec(`ALTER TABLE bookings ADD COLUMN anchor_trustline_tx_hash TEXT`);
   }
+  // Issue #35: appointment reminders
+  if (!hasColumn(sqlite, "bookings", "client_reminder_shown_at")) {
+    sqlite.exec(`ALTER TABLE bookings ADD COLUMN client_reminder_shown_at INTEGER`);
+  }
+  if (!hasColumn(sqlite, "bookings", "provider_reminder_shown_at")) {
+    sqlite.exec(`ALTER TABLE bookings ADD COLUMN provider_reminder_shown_at INTEGER`);
+  }
   // Story 5.8: admin can hide categories from discovery and new applications.
   if (!hasColumn(sqlite, "categories", "visible")) {
     sqlite.exec(`ALTER TABLE categories ADD COLUMN visible INTEGER NOT NULL DEFAULT 1`);
