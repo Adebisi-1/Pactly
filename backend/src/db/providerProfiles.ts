@@ -22,6 +22,7 @@ export interface NewProviderProfile {
   priceAmount: string;
   depositRateBps: number;
   cancellationWindowHours: number;
+  bufferMinutes?: number;
   isApproved?: boolean;
   createdAt: number;
 }
@@ -41,6 +42,7 @@ export async function insertProviderProfile(db: Db, values: NewProviderProfile):
     priceAmount: values.priceAmount,
     depositRateBps: values.depositRateBps,
     cancellationWindowHours: values.cancellationWindowHours,
+    bufferMinutes: values.bufferMinutes ?? 0,
     isApproved: values.isApproved ?? false,
     createdAt: values.createdAt,
   });
@@ -165,6 +167,7 @@ export async function listApprovedProviderProfilesForDiscover(
       priceAmount: providerProfiles.priceAmount,
       depositRateBps: providerProfiles.depositRateBps,
       cancellationWindowHours: providerProfiles.cancellationWindowHours,
+      bufferMinutes: providerProfiles.bufferMinutes,
       isApproved: providerProfiles.isApproved,
       bookingsPaused: providerProfiles.bookingsPaused,
       timezone: providerProfiles.timezone,
@@ -182,6 +185,7 @@ export interface ProviderRulesValues {
   priceAmount: string;
   depositRateBps: number;
   cancellationWindowHours: number;
+  bufferMinutes: number;
 }
 
 /** `services/profile.ts`'s `updateProviderRules` write path -- the one
@@ -231,20 +235,32 @@ export async function setProviderProfileApproved(db: Db, id: string, isApproved:
   }
 }
 
-/** Issue #62: the shop's own pause/resume of new bookings. Idempotent --
- * pausing an already-paused shop simply writes `true` again. */
-export async function setProviderProfileBookingsPaused(db: Db, id: string, bookingsPaused: boolean): Promise<void> {
-  const result = await db.update(providerProfiles).set({ bookingsPaused }).where(eq(providerProfiles.id, id));
-  if (result.changes === 0) {
-    throw new TypeError(`No provider profile exists with id "${id}"`);
-  }
+/**
+ * The approved-provider text-edit write path. Only the fields a shop is
+ * allowed to change after approval are in this shape; `price_amount`,
+ * `deposit_rate_bps`, `category_id` and `is_approved` are deliberately not
+ * accepted, so no caller of this function can change a commercial term by
+ * editing its profile copy.
+ */
+export interface ProviderProfileTextValues {
+  title: string;
+  bio: string;
+  languages: string;
+  sessionLengthMinutes: number;
+  location: string;
 }
 
-/** Issue #64: writes the shop's own IANA timezone. Only ever changes the
- * label a slot is rendered with -- the stored `starts_at` instants are not
- * touched. */
-export async function updateProviderProfileTimezone(db: Db, id: string, timezone: string): Promise<void> {
-  const result = await db.update(providerProfiles).set({ timezone }).where(eq(providerProfiles.id, id));
+export async function updateProviderProfileText(db: Db, id: string, values: ProviderProfileTextValues): Promise<void> {
+  const result = await db
+    .update(providerProfiles)
+    .set({
+      title: values.title,
+      bio: values.bio,
+      languages: values.languages,
+      sessionLengthMinutes: values.sessionLengthMinutes,
+      location: values.location,
+    })
+    .where(eq(providerProfiles.id, id));
   if (result.changes === 0) {
     throw new TypeError(`No provider profile exists with id "${id}"`);
   }
@@ -257,6 +273,7 @@ export async function updateProviderProfileRules(db: Db, id: string, values: Pro
       priceAmount: values.priceAmount,
       depositRateBps: values.depositRateBps,
       cancellationWindowHours: values.cancellationWindowHours,
+      bufferMinutes: values.bufferMinutes,
     })
     .where(eq(providerProfiles.id, id));
   if (result.changes === 0) {
