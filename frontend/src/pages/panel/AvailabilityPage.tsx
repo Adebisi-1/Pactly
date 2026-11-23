@@ -6,16 +6,15 @@ import { ApiError, apiDownload } from "../../api/client";
 import { PageMasthead } from "../../components/PageMasthead";
 import { SignInPanel } from "../../components/SignInPanel";
 import {
+  useClosedDates,
+  useCloseDate,
   useOwnProviderProfile,
-  useSetProviderBookingsPaused,
+  useReopenDate,
   useTryRate,
   useUpdateProviderAvailability,
-  useUpdateProviderBreaks,
+  useUpdateProviderProfile,
   useUpdateProviderRules,
-  useUpdateProviderTimezone,
 } from "../../api/hooks";
-import type { ProviderBreak } from "../../api/types";
-import { formatSlotTime } from "../../lib/time";
 import { TryAmount } from "../../components/TryAmount";
 import { tryToUsdcSmallestUnit, usdcToTry } from "../../lib/money";
 import { getSession, signOut, type Session } from "../../wallet";
@@ -157,14 +156,10 @@ export function AvailabilityPage() {
   const profileQuery = useOwnProviderProfile(session);
   const updateRules = useUpdateProviderRules(session);
   const updateAvailability = useUpdateProviderAvailability(session);
-  const setBookingsPaused = useSetProviderBookingsPaused(session);
-  const updateTimezone = useUpdateProviderTimezone(session);
-  const [timezoneInput, setTimezoneInput] = useState("");
-  const updateBreaks = useUpdateProviderBreaks(session);
-  const [breaks, setBreaks] = useState<ProviderBreak[]>([]);
-  const [breakWeekday, setBreakWeekday] = useState(1);
-  const [breakStart, setBreakStart] = useState("13:00");
-  const [breakEnd, setBreakEnd] = useState("14:00");
+  const updateProfile = useUpdateProviderProfile(session);
+  const closedDatesQuery = useClosedDates(session);
+  const closeDateMutation = useCloseDate(session);
+  const reopenDateMutation = useReopenDate(session);
   const { rate } = useTryRate();
 
   // The price is stored in USDC smallest units (AD-7) but typed in TRY.
@@ -177,11 +172,14 @@ export function AvailabilityPage() {
   const [priceEdited, setPriceEdited] = useState(false);
   const [depositRatePercentInput, setDepositRatePercentInput] = useState("");
   const [cancellationWindowInput, setCancellationWindowInput] = useState("");
+  const [bufferMinutesInput, setBufferMinutesInput] = useState("");
   const [selectedSlots, setSelectedSlots] = useState<Set<number>>(new Set());
-  const [exportFrom, setExportFrom] = useState(() => toDateInput(Date.now() - 6 * 24 * 60 * 60 * 1000));
-  const [exportTo, setExportTo] = useState(() => toDateInput(Date.now()));
-  const [exportError, setExportError] = useState<string | undefined>(undefined);
-  const [exporting, setExporting] = useState(false);
+  const [closeDateInput, setCloseDateInput] = useState("");
+  const [editTitle, setEditTitle] = useState("");
+  const [editBio, setEditBio] = useState("");
+  const [editLanguages, setEditLanguages] = useState("");
+  const [editSessionLength, setEditSessionLength] = useState("");
+  const [editLocation, setEditLocation] = useState("");
 
   // Seeds local form state only the first time a profile loads, or when it
   // switches to a *different* profile (a new sign-in) -- never on every
@@ -198,9 +196,13 @@ export function AvailabilityPage() {
       setPriceEdited(false);
       setDepositRatePercentInput(String(profileQuery.data.depositRateBps / 100));
       setCancellationWindowInput(String(profileQuery.data.cancellationWindowHours));
-      setTimezoneInput(profileQuery.data.timezone);
+      setBufferMinutesInput(String(profileQuery.data.bufferMinutes));
       setSelectedSlots(new Set(profileQuery.data.slots));
-      setBreaks(profileQuery.data.breaks ?? []);
+      setEditTitle(profileQuery.data.title);
+      setEditBio(profileQuery.data.bio ?? "");
+      setEditLanguages((profileQuery.data.languages ?? []).join(", "));
+      setEditSessionLength(String(profileQuery.data.sessionLengthMinutes));
+      setEditLocation(profileQuery.data.location);
     }
   }, [profileQuery.data]);
 
@@ -220,6 +222,7 @@ export function AvailabilityPage() {
   const depositRatePercent = Number(depositRatePercentInput);
   const depositRateBps = Number.isFinite(depositRatePercent) ? Math.round(depositRatePercent * 100) : Number.NaN;
   const cancellationWindowHours = Number(cancellationWindowInput);
+  const bufferMinutes = Number(bufferMinutesInput);
   const deposit = previewDeposit(priceSmallestUnit, depositRateBps);
 
   const rulesErrorDetails =
@@ -237,6 +240,7 @@ export function AvailabilityPage() {
         priceAmount: priceSmallestUnit,
         depositRateBps,
         cancellationWindowHours,
+        bufferMinutes,
       });
       // Only the rules form's own fields -- an unsaved slot selection in
       // the availability grid below must survive this save untouched. The
@@ -245,6 +249,7 @@ export function AvailabilityPage() {
       setPriceInput("");
       setDepositRatePercentInput(String(saved.depositRateBps / 100));
       setCancellationWindowInput(String(saved.cancellationWindowHours));
+      setBufferMinutesInput(String(saved.bufferMinutes));
     } catch {
       // Surfaced through `updateRules.error`/`rulesErrorDetails`/
       // `rulesGenericError` below -- nothing further to do here.
@@ -365,6 +370,66 @@ export function AvailabilityPage() {
     }
   }
 
+  const profileErrorDetails =
+    updateProfile.error instanceof ApiError ? (updateProfile.error.details as Record<string, string> | undefined) : undefined;
+  const profileNotApproved =
+    updateProfile.error instanceof ApiError && updateProfile.error.code === "NOT_APPROVED";
+
+  async function handleSaveProfile(event: React.FormEvent): Promise<void> {
+    event.preventDefault();
+    try {
+      const saved = await updateProfile.mutateAsync({
+        title: editTitle,
+        bio: editBio,
+        languages: editLanguages
+          .split(",")
+          .map((language) => language.trim())
+          .filter(Boolean),
+        sessionLengthMinutes: Number(editSessionLength),
+        location: editLocation,
+      });
+      setEditTitle(saved.title);
+      setEditBio(saved.bio ?? "");
+      setEditLanguages((saved.languages ?? []).join(", "));
+      setEditSessionLength(String(saved.sessionLengthMinutes));
+      setEditLocation(saved.location);
+    } catch {
+      // Surfaced through `updateProfile.error`/`profileErrorDetails`.
+    }
+  }
+
+  // A date with a locked booking is refused with the booking's id; the panel
+  // names it rather than showing a generic "couldn't close" message.
+  const closeErrorDetails =
+    closeDateMutation.error instanceof ApiError
+      ? (closeDateMutation.error.details as { bookingId?: string } | undefined)
+      : undefined;
+  const closeErrorMessage =
+    closeDateMutation.error && !closeErrorDetails?.bookingId
+      ? closeDateMutation.error instanceof ApiError
+        ? closeDateMutation.error.message
+        : "Couldn't close that date."
+      : undefined;
+
+  async function handleCloseDate(event: React.FormEvent): Promise<void> {
+    event.preventDefault();
+    if (!closeDateInput) return;
+    try {
+      await closeDateMutation.mutateAsync(closeDateInput);
+      setCloseDateInput("");
+    } catch {
+      // Surfaced through `closeDateMutation.error` above.
+    }
+  }
+
+  async function handleReopenDate(date: string): Promise<void> {
+    try {
+      await reopenDateMutation.mutateAsync(date);
+    } catch {
+      // Surfaced by the query/mutation state on the next render.
+    }
+  }
+
   if (!session) {
     return (
       <div className="page">
@@ -436,26 +501,55 @@ export function AvailabilityPage() {
       )}
 
       <section className="card" style={{ marginBottom: "var(--space-6)" }}>
-        <h2 style={{ fontSize: "var(--text-18)", marginTop: 0 }}>New bookings</h2>
-        {profile.bookingsPaused && (
-          <div className="banner" role="status" style={{ marginBottom: "var(--space-4)" }}>
-            New bookings are paused. Clients can&rsquo;t hold a slot right now. Your existing bookings, locks and
-            disputes are untouched.
+        <h2 style={{ fontSize: "var(--text-18)", marginTop: 0 }}>Your shop's copy</h2>
+        <p>
+          Title, description, languages, session length and location are yours to edit. Price, deposit rate and category
+          stay as they were approved.
+        </p>
+        {profileNotApproved && (
+          <div className="banner banner--alert" role="alert" style={{ marginBottom: "var(--space-4)" }}>
+            An approved shop can edit its public profile. Your application is still pending.
           </div>
         )}
-        {!profile.bookingsPaused && <p>Clients can book your open slots.</p>}
-        <button
-          type="button"
-          className="button-ghost"
-          onClick={() => setBookingsPaused.mutate(!profile.bookingsPaused)}
-          disabled={setBookingsPaused.isPending}
-        >
-          {setBookingsPaused.isPending
-            ? "Saving…"
-            : profile.bookingsPaused
-              ? "Resume new bookings"
-              : "Pause new bookings"}
-        </button>
+        {profileErrorDetails && Object.keys(profileErrorDetails).length > 0 && (
+          <div className="banner banner--alert" role="alert" style={{ marginBottom: "var(--space-4)" }}>
+            {Object.values(profileErrorDetails).join(" ")}
+          </div>
+        )}
+        <form onSubmit={handleSaveProfile}>
+          <div className="field">
+            <label htmlFor="profile-title">Title</label>
+            <input id="profile-title" value={editTitle} onChange={(event) => setEditTitle(event.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="profile-bio">Description</label>
+            <textarea id="profile-bio" rows={4} value={editBio} onChange={(event) => setEditBio(event.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="profile-languages">Languages (comma separated)</label>
+            <input
+              id="profile-languages"
+              value={editLanguages}
+              onChange={(event) => setEditLanguages(event.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="profile-session-length">Session length (minutes)</label>
+            <input
+              id="profile-session-length"
+              inputMode="numeric"
+              value={editSessionLength}
+              onChange={(event) => setEditSessionLength(event.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="profile-location">How to find the shop</label>
+            <input id="profile-location" value={editLocation} onChange={(event) => setEditLocation(event.target.value)} />
+          </div>
+          <button type="submit" className="button-primary" disabled={updateProfile.isPending}>
+            {updateProfile.isPending ? "Saving…" : "Save profile"}
+          </button>
+        </form>
       </section>
 
       <section className="card" style={{ marginBottom: "var(--space-6)" }}>
@@ -505,6 +599,18 @@ export function AvailabilityPage() {
             {rulesErrorDetails?.cancellationWindowHours && (
               <span className="field__error">{rulesErrorDetails.cancellationWindowHours}</span>
             )}
+          </div>
+          <div className="field">
+            <label htmlFor="bufferMinutes">Buffer between appointments (minutes)</label>
+            <input
+              id="bufferMinutes"
+              inputMode="numeric"
+              min={0}
+              max={120}
+              value={bufferMinutesInput}
+              onChange={(event) => setBufferMinutesInput(event.target.value)}
+            />
+            {rulesErrorDetails?.bufferMinutes && <span className="field__error">{rulesErrorDetails.bufferMinutes}</span>}
           </div>
 
           <p className="tabular-nums">
@@ -680,6 +786,44 @@ export function AvailabilityPage() {
         >
           {updateAvailability.isPending ? "Saving…" : "Save availability"}
         </button>
+      </section>
+
+      <section className="card" style={{ marginTop: "var(--space-6)" }}>
+        <h2 style={{ fontSize: "var(--text-18)", marginTop: 0 }}>Closed dates</h2>
+        <p>
+          Take a single day off without changing your repeating slots. The same weekday next week stays open, and closing
+          a date never cancels a booking.
+        </p>
+        {closeErrorDetails?.bookingId && (
+          <div className="banner banner--alert" role="alert" style={{ marginBottom: "var(--space-4)" }}>
+            That date has a locked booking ({closeErrorDetails.bookingId}). Close a different date instead.
+          </div>
+        )}
+        {closeErrorMessage && (
+          <div className="banner banner--alert" role="alert" style={{ marginBottom: "var(--space-4)" }}>
+            {closeErrorMessage}
+          </div>
+        )}
+        <form onSubmit={handleCloseDate} style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-end" }}>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label htmlFor="closed-date">Date to close</label>
+            <input id="closed-date" type="date" value={closeDateInput} onChange={(event) => setCloseDateInput(event.target.value)} />
+          </div>
+          <button type="submit" className="button-primary" disabled={closeDateMutation.isPending || !closeDateInput}>
+            {closeDateMutation.isPending ? "Closing…" : "Close date"}
+          </button>
+        </form>
+        <ul style={{ marginTop: "var(--space-4)" }}>
+          {(closedDatesQuery.data?.closedDates ?? []).map((date) => (
+            <li key={date} style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>
+              <span className="tabular-nums">{date}</span>
+              <button type="button" className="button-ghost" onClick={() => void handleReopenDate(date)}>
+                Reopen
+              </button>
+            </li>
+          ))}
+          {(closedDatesQuery.data?.closedDates ?? []).length === 0 && <li>No closed dates.</li>}
+        </ul>
       </section>
     </div>
   );

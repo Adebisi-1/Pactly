@@ -69,27 +69,6 @@ export function apiPut<T>(path: string, body: unknown, token?: string): Promise<
   return request<T>(path, { method: "PUT", headers: authHeaders(token), body: JSON.stringify(body) });
 }
 
-/** A file download (`GET .../export`) -- the same typed error boundary as
- * `request`, but the body is a blob rather than JSON. */
-export interface DownloadResult {
-  blob: Blob;
-  filename: string | undefined;
-}
-
-export async function apiDownload(path: string, token?: string): Promise<DownloadResult> {
-  let response: Response;
-  try {
-    response = await fetch(`/api${path}`, { headers: authHeaders(token) });
-  } catch {
-    throw new ApiError({ code: "NETWORK", message: "Connection dropped. Your deposit is untouched." }, 0);
-  }
-  if (!response.ok) {
-    const envelope = await response
-      .json()
-      .catch(() => ({ code: "unknown_error", message: "The export could not be built." }));
-    throw new ApiError(envelope as ApiErrorEnvelope, response.status);
-  }
-  const disposition = response.headers.get("content-disposition") ?? "";
-  const filename = /filename="([^"]+)"/.exec(disposition)?.[1];
-  return { blob: await response.blob(), filename };
+export function apiDelete<T>(path: string, token?: string): Promise<T> {
+  return request<T>(path, { method: "DELETE", headers: authHeaders(token) });
 }
