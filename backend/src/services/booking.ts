@@ -348,6 +348,14 @@ export async function holdSlot(db: Db, input: HoldSlotInput, deps: HoldSlotDeps 
     throw new SlotUnavailableError();
   }
 
+  // Issue #36: a slot sooner than the shop's notice period cannot be held.
+  if (profile.minimumNoticeMinutes > 0) {
+    const minStartTime = now + profile.minimumNoticeMinutes * 60;
+    if (slot.startsAt < minStartTime) {
+      throw new SlotUnavailableError();
+    }
+  }
+
   // A slot inside the post-lock buffer is not offered -- refuse the hold the
   // same way as an unknown/past slot so a stale deep-link cannot claim it.
   if (profile.bufferMinutes > 0) {

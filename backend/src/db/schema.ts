@@ -85,6 +85,10 @@ export const providerProfiles = sqliteTable("provider_profiles", {
   priceAmount: text("price_amount").notNull(),
   depositRateBps: integer("deposit_rate_bps").notNull(),
   cancellationWindowHours: integer("cancellation_window_hours").notNull(),
+  /** Issue #36: minimum notice in minutes (0-10080, i.e. 0-7 days). Slots
+   * sooner than this are not offered/held. Zero means immediate booking.
+   * Defaults to 0 for profiles created before this field. */
+  minimumNoticeMinutes: integer("minimum_notice_minutes").notNull().default(0),
   /** Minutes kept free after a locked booking before another slot may be
    * offered (0-120). Does not change weekly hours or move existing locks. */
   bufferMinutes: integer("buffer_minutes").notNull().default(0),

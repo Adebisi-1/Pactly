@@ -166,6 +166,8 @@ export interface ProviderRulesInput {
   priceAmount: string;
   depositRateBps: number;
   cancellationWindowHours: number;
+  /** Issue #36: minimum notice in minutes (0-10080, i.e. 0-7 days). */
+  minimumNoticeMinutes?: number;
   /** Minutes kept free after a locked booking (0-120). Omitted means 0. */
   bufferMinutes?: number;
 }
@@ -175,6 +177,8 @@ const MIN_DEPOSIT_RATE_BPS = 1;
 const MAX_DEPOSIT_RATE_BPS = 10000;
 const MIN_CANCELLATION_WINDOW_HOURS = 0;
 const MAX_CANCELLATION_WINDOW_HOURS = 720;
+const MIN_NOTICE_MINUTES = 0;
+const MAX_NOTICE_MINUTES = 10080; // 7 days
 const MIN_BUFFER_MINUTES = 0;
 const MAX_BUFFER_MINUTES = 120;
 
@@ -204,6 +208,17 @@ export function validateProviderRules(input: ProviderRulesInput): Record<string,
     input.cancellationWindowHours > MAX_CANCELLATION_WINDOW_HOURS
   ) {
     details.cancellationWindowHours = `Cancellation window must be a whole number of hours between ${MIN_CANCELLATION_WINDOW_HOURS} and ${MAX_CANCELLATION_WINDOW_HOURS}.`;
+  }
+  // Issue #36: validate minimum notice minutes (0-7 days)
+  if (input.minimumNoticeMinutes !== undefined) {
+    if (
+      typeof input.minimumNoticeMinutes !== "number" ||
+      !Number.isInteger(input.minimumNoticeMinutes) ||
+      input.minimumNoticeMinutes < MIN_NOTICE_MINUTES ||
+      input.minimumNoticeMinutes > MAX_NOTICE_MINUTES
+    ) {
+      details.minimumNoticeMinutes = `Minimum notice must be a whole number of minutes between ${MIN_NOTICE_MINUTES} and ${MAX_NOTICE_MINUTES} (0-7 days).`;
+    }
   }
 
   const bufferMinutes = input.bufferMinutes ?? 0;
@@ -291,6 +306,8 @@ export interface ProviderProfileView {
   deposit: { amount: string; asset: string };
   depositRateBps: number;
   cancellationWindowHours: number;
+  /** Issue #36: minimum notice in minutes (0-7 days). */
+  minimumNoticeMinutes: number;
   bufferMinutes: number;
   verifiedSessionCount: number;
   isApproved: boolean;
@@ -331,6 +348,7 @@ export function buildProviderProfileView(
     deposit: { amount: computeDepositAmount(profile.priceAmount, profile.depositRateBps), asset: ASSET },
     depositRateBps: profile.depositRateBps,
     cancellationWindowHours: profile.cancellationWindowHours,
+    minimumNoticeMinutes: profile.minimumNoticeMinutes,
     bufferMinutes: profile.bufferMinutes,
     verifiedSessionCount: profile.verifiedSessionCount,
     isApproved: profile.isApproved,
@@ -359,7 +377,8 @@ async function loadCategoryOrThrow(db: Db, categoryId: string, notFound: () => E
  * `listOfferedSlots`, not `listFutureSlots` -- so a client is never shown
  * a slot they cannot actually hold; this is also how "the slot then shows
  * as taken on the profile" (spec Acceptance Criteria) is satisfied once a
- * lock lands. Slots inside the post-lock appointment buffer are excluded too. */
+ * lock lands. Slots inside the post-lock appointment buffer are excluded too.
+ * Issue #36: slots inside the minimum notice period are excluded as well. */
 export async function getPublicProviderProfile(
   db: Db,
   id: string,
@@ -376,7 +395,11 @@ export async function getPublicProviderProfile(
     sessionLengthMinutes: profile.sessionLengthMinutes,
     bufferMinutes: profile.bufferMinutes,
   });
-  return buildProviderProfileView(profile, category, offeredStarts);
+  const noticeSeconds = (profile.minimumNoticeMinutes ?? 0) * 60;
+  const visibleStarts = noticeSeconds > 0
+    ? offeredStarts.filter((startsAt) => startsAt >= now + noticeSeconds)
+    : offeredStarts;
+  return buildProviderProfileView(profile, category, visibleStarts);
 }
 
 /** `GET /me/provider`: the caller's own profile, including while

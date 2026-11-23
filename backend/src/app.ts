@@ -676,6 +676,7 @@ export function createApp(db: Db, options: CreateAppOptions = {}): App {
         depositRateBps: typeof body?.depositRateBps === "number" ? body.depositRateBps : Number.NaN,
         cancellationWindowHours:
           typeof body?.cancellationWindowHours === "number" ? body.cancellationWindowHours : Number.NaN,
+        minimumNoticeMinutes: typeof body?.minimumNoticeMinutes === "number" ? body.minimumNoticeMinutes : undefined,
         bufferMinutes: typeof body?.bufferMinutes === "number" ? body.bufferMinutes : 0,
       });
       return c.json(profile);
