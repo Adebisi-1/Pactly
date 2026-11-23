@@ -131,6 +131,9 @@ export interface HoldSlotResponse {
   /** `true` only when the free-cancellation window had already passed at
    * the moment of the hold -- omitted (never `false`) otherwise. */
   freeCancellationEnded?: boolean;
+  /** `true` only when a resume read found an expired, never-deployed hold.
+   * The UI clears the hold and offers an explicit re-hold action. */
+  isExpiredHold?: true;
 }
 
 /** Review follow-up: `deployed: true` means a signed deploy was already
