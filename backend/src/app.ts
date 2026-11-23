@@ -951,6 +951,7 @@ export function createApp(db: Db, options: CreateAppOptions = {}): App {
     const providerId = typeof body?.providerId === "string" ? body.providerId : undefined;
     const slotStartsAt = typeof body?.slotStartsAt === "number" ? body.slotStartsAt : undefined;
     const tzOffsetMinutes = typeof body?.tzOffsetMinutes === "number" ? body.tzOffsetMinutes : undefined;
+    const clientEmail = typeof body?.clientEmail === "string" ? body.clientEmail : undefined;
     const renewExpired = body?.renewExpired === true;
     if (!providerId || slotStartsAt === undefined) {
       return c.json(
@@ -967,6 +968,7 @@ export function createApp(db: Db, options: CreateAppOptions = {}): App {
         clientWalletAddress: c.get("walletAddress"),
         slotStartsAt,
         tzOffsetMinutes,
+        clientEmail,
         renewExpired,
       });
       return c.json(result, 201);

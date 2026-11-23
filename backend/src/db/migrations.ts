@@ -348,6 +348,10 @@ export function runMigrations(sqlite: Database): void {
   if (!hasColumn(sqlite, "bookings", "anchor_trustline_tx_hash")) {
     sqlite.exec(`ALTER TABLE bookings ADD COLUMN anchor_trustline_tx_hash TEXT`);
   }
+  // Optional client email for the shop's post-release mailto draft (#47).
+  if (!hasColumn(sqlite, "bookings", "client_email")) {
+    sqlite.exec(`ALTER TABLE bookings ADD COLUMN client_email TEXT`);
+  }
   // Issue #35: appointment reminders
   if (!hasColumn(sqlite, "bookings", "client_reminder_shown_at")) {
     sqlite.exec(`ALTER TABLE bookings ADD COLUMN client_reminder_shown_at INTEGER`);

@@ -76,6 +76,7 @@ import {
   setEscrowFundTxHash,
   setPendingDispute,
   updateBalanceState,
+  updateClientEmail,
   updateEscrowContractId,
   updateEscrowStateIfNotTerminalSync,
   type BookingRow,
@@ -266,6 +267,8 @@ export interface HoldSlotInput {
    * `sameDaySlots`'s calendar-day window in the caller's own local day
    * rather than UTC. Omitted (or `0`) means UTC, the previous behavior. */
   tzOffsetMinutes?: number;
+  /** Optional client contact email for the shop's post-release mailto draft. */
+  clientEmail?: string | null;
 }
 
 export interface HoldSlotResult {
@@ -381,6 +384,9 @@ export async function holdSlot(db: Db, input: HoldSlotInput, deps: HoldSlotDeps 
   // are all the same wallet asking for what it already has.
   const existing = await getActiveBookingForWalletAndSlot(db, slot.id, input.clientWalletAddress, now);
   if (existing) {
+    if (input.clientEmail !== undefined) {
+      await updateClientEmail(db, existing.id, input.clientEmail);
+    }
     return {
       bookingId: existing.id,
       holdExpiresAt: existing.holdExpiresAt ?? now,
@@ -431,6 +437,7 @@ export async function holdSlot(db: Db, input: HoldSlotInput, deps: HoldSlotDeps 
       id: bookingId,
       providerProfileId: profile.id,
       clientWalletAddress: input.clientWalletAddress,
+      clientEmail: input.clientEmail?.trim() || null,
       tokenAddress: usdc.contractId,
       depositAmount,
       balanceAmount,
@@ -1886,6 +1893,8 @@ export interface ProviderBookingListItem extends BookingListItemBase {
    * uses), never truncated here (this backend never invents a display
    * format; see `lib/money.ts`'s own equivalent discipline for amounts). */
   clientWalletAddress: string;
+  /** Optional client contact email for the shop's post-release mailto draft. */
+  clientEmail: string | null;
 }
 
 function isExpiredHoldRow(booking: BookingRow, now: number): boolean {
@@ -2039,6 +2048,7 @@ export async function listBookingsForProvider(
   const items: ProviderBookingListItem[] = rows.map(({ booking, slotStartsAt }) => ({
     ...toBookingListItemBase(booking, slotStartsAt, lifecycleByBooking.get(booking.id), now, remindersShown.has(booking.id)),
     clientWalletAddress: booking.clientWalletAddress,
+    clientEmail: booking.clientEmail ?? null,
   }));
   items.sort((a, b) => compareByAppointmentDate(a, b, now));
   return items;
